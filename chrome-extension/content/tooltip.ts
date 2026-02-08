@@ -1,7 +1,12 @@
 /**
- * Floating tooltip that shows selector preview near the cursor.
+ * Floating tooltip that shows selector preview with extracted data.
  * Rendered inside the page DOM but with inline styles to minimize conflicts.
  */
+
+interface PreviewData {
+  samples: string[];
+  extractType: 'text' | 'html' | 'attribute';
+}
 
 let tooltipEl: HTMLDivElement | null = null;
 
@@ -19,14 +24,13 @@ function ensureTooltip(): HTMLDivElement {
     font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
     font-size: 11px;
     line-height: 1.5;
-    padding: 5px 10px;
+    padding: 6px 10px;
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.1);
-    max-width: 400px;
-    white-space: nowrap;
+    max-width: 450px;
+    white-space: normal;
     overflow: hidden;
-    text-overflow: ellipsis;
     display: none;
     transition: left 0.06s ease-out, top 0.06s ease-out;
     will-change: left, top;
@@ -37,12 +41,59 @@ function ensureTooltip(): HTMLDivElement {
   return tooltipEl;
 }
 
-export function showTooltip(x: number, y: number, selector: string, matchCount: number, tagName: string): void {
+function formatPreviewData(data: PreviewData): string {
+  const { samples, extractType } = data;
+
+  if (samples.length === 0) {
+    return '<span style="color:#64748b;font-style:italic">No data</span>';
+  }
+
+  // For single match, show the data directly
+  if (samples.length === 1) {
+    const preview = truncate(samples[0], 60);
+    const escaped = escapeHtml(preview);
+    const typeIcon = extractType === 'html' ? '&lt;&gt;' : extractType === 'attribute' ? '@' : 'T';
+
+    return `<span style="color:#64748b;margin:0 4px">|</span><span style="color:#10b981" title="${extractType}">${typeIcon}</span><span style="color:#e2e8f0;margin-left:4px">${escaped}</span>`;
+  }
+
+  // For multiple matches, show count + first 2 samples
+  const previewSamples = samples.slice(0, 2).map(s => truncate(s, 25));
+  const moreCount = samples.length > 2 ? samples.length - 2 : 0;
+
+  let html = `<span style="color:#64748b;margin:0 4px">|</span><span style="color:#fbbf24">${samples.length}×</span><span style="color:#64748b;margin:0 4px">→</span>`;
+
+  previewSamples.forEach((sample, i) => {
+    html += `<span style="color:#94a3b8${i > 0 ? ';margin-left:6px' : ''}">${escapeHtml(sample)}</span>`;
+  });
+
+  if (moreCount > 0) {
+    html += `<span style="color:#64748b;margin-left:6px">+${moreCount} more</span>`;
+  }
+
+  return html;
+}
+
+export function showTooltip(
+  x: number,
+  y: number,
+  selector: string,
+  matchCount: number,
+  tagName: string,
+  samples?: string[],
+  previewData?: { type: 'text' | 'html' | 'attribute' }
+): void {
   const tip = ensureTooltip();
   const matchColor = matchCount === 1 ? '#4ade80' : '#fbbf24';
   const matchText = matchCount === 1 ? '1 match' : `${matchCount} matches`;
 
-  tip.innerHTML = `<span style="color:#93c5fd;font-weight:500">${tagName.toLowerCase()}</span><span style="color:#475569;margin:0 5px">/</span><span style="color:#cbd5e1">${escapeHtml(truncate(selector, 55))}</span><span style="color:#475569;margin:0 5px">/</span><span style="color:${matchColor};font-weight:500">${matchText}</span>`;
+  let html = `<span style="color:#93c5fd;font-weight:500">${tagName.toLowerCase()}</span><span style="color:#475569;margin:0 5px">/</span><span style="color:#cbd5e1">${escapeHtml(truncate(selector, 50))}</span><span style="color:#475569;margin:0 5px">/</span><span style="color:${matchColor};font-weight:500">${matchText}</span>`;
+
+  if (samples && previewData) {
+    html += formatPreviewData({ samples, extractType: previewData.type });
+  }
+
+  tip.innerHTML = html;
   tip.style.display = 'block';
 
   // Position offset from cursor, clamped to viewport
