@@ -80,8 +80,7 @@ export function showTooltip(
   selector: string,
   matchCount: number,
   tagName: string,
-  samples?: string[],
-  previewData?: { type: 'text' | 'html' | 'attribute' }
+  previewData?: PreviewData
 ): void {
   const tip = ensureTooltip();
   const matchColor = matchCount === 1 ? '#4ade80' : '#fbbf24';
@@ -89,8 +88,8 @@ export function showTooltip(
 
   let html = `<span style="color:#93c5fd;font-weight:500">${tagName.toLowerCase()}</span><span style="color:#475569;margin:0 5px">/</span><span style="color:#cbd5e1">${escapeHtml(truncate(selector, 50))}</span><span style="color:#475569;margin:0 5px">/</span><span style="color:${matchColor};font-weight:500">${matchText}</span>`;
 
-  if (samples && previewData) {
-    html += formatPreviewData({ samples, extractType: previewData.type });
+  if (previewData) {
+    html += formatPreviewData(previewData);
   }
 
   tip.innerHTML = html;
