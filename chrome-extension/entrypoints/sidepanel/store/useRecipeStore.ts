@@ -184,22 +184,32 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
     const { pendingDuplicate } = get();
     if (!pendingDuplicate) return;
 
-    if (merge) {
-      await get().updateField(pendingDuplicate.existingFieldId, { multiple: true });
-    } else {
-      const fieldName = guessFieldName(pendingDuplicate.selector, pendingDuplicate.attributes);
-      await get().addField({
-        field_name: fieldName,
-        selector: pendingDuplicate.selector,
-        selector_type: 'css',
-        fallback_selectors: pendingDuplicate.alternatives,
-        extract: guessExtractConfig(pendingDuplicate.selector, pendingDuplicate.attributes),
-        transforms: [{ type: 'trim' }],
-        multiple: false,
-      });
-    }
-
+    // Clear pendingDuplicate FIRST to hide the toast immediately
     set({ pendingDuplicate: null });
+
+    if (merge) {
+      try {
+        await get().updateField(pendingDuplicate.existingFieldId, { multiple: true });
+      } catch (error) {
+        console.error('Failed to update field:', error);
+      }
+    } else {
+      // Add new field with same selector
+      try {
+        const fieldName = guessFieldName(pendingDuplicate.selector, pendingDuplicate.attributes);
+        await get().addField({
+          field_name: fieldName,
+          selector: pendingDuplicate.selector,
+          selector_type: 'css',
+          fallback_selectors: pendingDuplicate.alternatives,
+          extract: guessExtractConfig(pendingDuplicate.selector, pendingDuplicate.attributes),
+          transforms: [{ type: 'trim' }],
+          multiple: false,
+        });
+      } catch (error) {
+        console.error('Failed to add field:', error);
+      }
+    }
   },
 
   clearPendingDuplicate: () => set({ pendingDuplicate: null }),
