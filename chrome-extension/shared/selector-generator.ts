@@ -1,4 +1,5 @@
 import { finder } from '@medv/finder';
+import type { ExtractConfig } from './types';
 
 // Patterns that indicate auto-generated IDs (unstable across deploys)
 export const AUTO_GENERATED_ID_PATTERN =
@@ -120,4 +121,44 @@ export function getElementAttributes(element: Element): Record<string, string> {
   }
 
   return attrs;
+}
+
+// ── Data Extraction for Preview ──
+
+/**
+ * Extract data from a single element based on the extract config.
+ */
+export function extractDataFromElement(element: Element, config: ExtractConfig): string {
+  switch (config.type) {
+    case 'text':
+      return element.textContent?.trim() ?? '';
+
+    case 'html':
+      return element.innerHTML;
+
+    case 'attribute':
+      return element.getAttribute(config.attribute ?? '') ?? '';
+
+    default:
+      return '';
+  }
+}
+
+/**
+ * Extract data from all elements matching a selector.
+ * Returns up to 10 samples for preview purposes.
+ */
+export function extractDataFromSelector(selector: string, config: ExtractConfig): string[] {
+  try {
+    const elements = document.querySelectorAll(selector);
+    const samples: string[] = [];
+
+    for (let i = 0; i < Math.min(elements.length, 10); i++) {
+      samples.push(extractDataFromElement(elements[i], config));
+    }
+
+    return samples;
+  } catch {
+    return [];
+  }
 }
