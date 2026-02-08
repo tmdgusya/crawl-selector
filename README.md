@@ -13,6 +13,7 @@ A Chrome extension for visually picking elements and exporting CSS selectors as 
 - **Field Extraction** - Extract text, HTML, or attributes from selected elements
 - **Export to JSON** - Export recipes in a structured format for crawling workflows
 - **Live Preview** - See selector match count in real-time while hovering
+- **Live Data Preview** - See extracted content in real-time while hovering over elements
 
 ## Installation
 
