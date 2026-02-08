@@ -1,7 +1,7 @@
 import { finder } from '@medv/finder';
 
 // Patterns that indicate auto-generated IDs (unstable across deploys)
-const AUTO_GENERATED_ID_PATTERN =
+export const AUTO_GENERATED_ID_PATTERN =
   /^(ember|react|vue|ng|svelte|_|js-|rc-|radix-|headlessui-)\d|^[0-9a-f]{8}-[0-9a-f]{4}-|^:r[0-9a-z]+:$/i;
 
 // Class patterns that look auto-generated (CSS-in-JS hashes, Tailwind arbitrary, etc.)
@@ -10,7 +10,7 @@ const UNSTABLE_CLASS_PATTERN = /^(css|sc|styled|emotion|_)-?[a-z0-9]{4,}$|^[a-z]
 /**
  * Robustness tiers for CSS selectors (lower = more stable).
  */
-function selectorRobustnessScore(selector: string): number {
+export function selectorRobustnessScore(selector: string): number {
   if (/\[data-/.test(selector)) return 1;
   if (/#[^:\s]+/.test(selector) && !AUTO_GENERATED_ID_PATTERN.test(selector.replace('#', ''))) return 2;
   if (/\[role=/.test(selector) || /\[aria-/.test(selector)) return 3;

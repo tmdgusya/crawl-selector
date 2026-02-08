@@ -5,6 +5,7 @@ import { PickerButton } from './components/PickerButton';
 import { FieldList } from './components/FieldList';
 import { ExportPanel } from './components/ExportPanel';
 import { CrosshairIcon } from './components/Icons';
+import { DuplicateToast } from './components/DuplicateToast';
 import type { ContentMessage } from '../../shared/messages';
 
 export default function App() {
@@ -64,6 +65,8 @@ export default function App() {
         {/* Export */}
         {recipe && recipe.fields.length > 0 && <ExportPanel />}
       </main>
+
+      <DuplicateToast />
     </div>
   );
 }

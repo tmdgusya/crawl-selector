@@ -1,18 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useRecipeStore } from '../store/useRecipeStore';
 import { PlusIcon, TrashIcon } from './Icons';
-
-/** Strip protocol and convert URL to a glob-like pattern. */
-function urlToPattern(url: string): string {
-  try {
-    const u = new URL(url);
-    // e.g. "https://news.ycombinator.com/item?id=123" → "news.ycombinator.com/item*"
-    const path = u.pathname === '/' ? '/*' : u.pathname + '*';
-    return u.hostname + path;
-  } catch {
-    return url;
-  }
-}
+import { urlToPattern } from '../../../shared/helpers';
 
 export function RecipeManager() {
   const { recipes, activeRecipeId, createRecipe, switchRecipe, removeRecipe } =

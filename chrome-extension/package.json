@@ -12,7 +12,9 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@medv/finder": "^4.0.2",
@@ -31,7 +33,9 @@
     "autoprefixer": "^10.4.24",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
+    "jsdom": "^26.1.0",
     "typescript": "^5.9.3",
+    "vitest": "^3.1.4",
     "wxt": "^0.20.14"
   }
 }

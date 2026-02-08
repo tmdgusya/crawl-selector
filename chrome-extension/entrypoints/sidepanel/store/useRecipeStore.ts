@@ -2,11 +2,21 @@ import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import type { CrawlRecipe, SelectorField, ExtractConfig, TransformStep, CrawlRecipeExport, ExportField } from '../../../shared/types';
 import { getStorageData, saveRecipe, deleteRecipe as deleteRecipeFromStorage, setActiveRecipe } from '../../../shared/storage';
+import { guessFieldName, guessExtractConfig } from '../../../shared/helpers';
+
+export interface PendingDuplicate {
+  selector: string;
+  alternatives: string[];
+  attributes: Record<string, string>;
+  existingFieldId: string;
+  existingFieldName: string;
+}
 
 interface RecipeState {
   recipes: Record<string, CrawlRecipe>;
   activeRecipeId: string | null;
   pickerActive: boolean;
+  pendingDuplicate: PendingDuplicate | null;
 
   // Initialization
   loadFromStorage: () => Promise<void>;
@@ -23,6 +33,10 @@ interface RecipeState {
   updateField: (fieldId: string, changes: Partial<SelectorField>) => Promise<void>;
   deleteField: (fieldId: string) => Promise<void>;
 
+  // Duplicate resolution
+  resolveDuplicate: (merge: boolean) => Promise<void>;
+  clearPendingDuplicate: () => void;
+
   // Picker state
   setPickerActive: (active: boolean) => void;
 
@@ -37,6 +51,7 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
   recipes: {},
   activeRecipeId: null,
   pickerActive: false,
+  pendingDuplicate: null,
 
   loadFromStorage: async () => {
     const data = await getStorageData();
@@ -105,6 +120,24 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
   },
 
   addFieldFromPicker: async (selector, alternatives, attributes) => {
+    const recipe = get().getActiveRecipe();
+    if (!recipe) return;
+
+    // Check for duplicate selector
+    const existing = recipe.fields.find((f) => f.selector === selector);
+    if (existing) {
+      set({
+        pendingDuplicate: {
+          selector,
+          alternatives,
+          attributes,
+          existingFieldId: existing.id,
+          existingFieldName: existing.field_name,
+        },
+      });
+      return;
+    }
+
     const fieldName = guessFieldName(selector, attributes);
     await get().addField({
       field_name: fieldName,
@@ -147,6 +180,30 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
     set((s) => ({ recipes: { ...s.recipes, [activeRecipeId]: updated } }));
   },
 
+  resolveDuplicate: async (merge) => {
+    const { pendingDuplicate } = get();
+    if (!pendingDuplicate) return;
+
+    if (merge) {
+      await get().updateField(pendingDuplicate.existingFieldId, { multiple: true });
+    } else {
+      const fieldName = guessFieldName(pendingDuplicate.selector, pendingDuplicate.attributes);
+      await get().addField({
+        field_name: fieldName,
+        selector: pendingDuplicate.selector,
+        selector_type: 'css',
+        fallback_selectors: pendingDuplicate.alternatives,
+        extract: guessExtractConfig(pendingDuplicate.selector, pendingDuplicate.attributes),
+        transforms: [{ type: 'trim' }],
+        multiple: false,
+      });
+    }
+
+    set({ pendingDuplicate: null });
+  },
+
+  clearPendingDuplicate: () => set({ pendingDuplicate: null }),
+
   setPickerActive: (active) => set({ pickerActive: active }),
 
   exportRecipe: (recipeId) => {
@@ -186,37 +243,3 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
   },
 }));
 
-// ── Heuristic helpers ──
-
-function guessFieldName(selector: string, attributes: Record<string, string>): string {
-  // Try to derive a meaningful name from the selector or attributes
-  const testId = attributes['data-testid'];
-  if (testId) return toSnakeCase(testId);
-
-  const ariaLabel = attributes['aria-label'];
-  if (ariaLabel) return toSnakeCase(ariaLabel.slice(0, 30));
-
-  // Extract meaningful parts from selector
-  const classMatch = selector.match(/\.([\w-]+)/);
-  if (classMatch) return toSnakeCase(classMatch[1]);
-
-  const idMatch = selector.match(/#([\w-]+)/);
-  if (idMatch) return toSnakeCase(idMatch[1]);
-
-  return 'field_' + Date.now().toString(36).slice(-4);
-}
-
-function guessExtractConfig(selector: string, attributes: Record<string, string>): ExtractConfig {
-  if (attributes.href) return { type: 'attribute', attribute: 'href' };
-  if (attributes.src) return { type: 'attribute', attribute: 'src' };
-  return { type: 'text' };
-}
-
-function toSnakeCase(str: string): string {
-  return str
-    .replace(/([a-z])([A-Z])/g, '$1_$2')
-    .replace(/[\s\-]+/g, '_')
-    .replace(/[^a-zA-Z0-9_]/g, '')
-    .toLowerCase()
-    .slice(0, 40);
-}
