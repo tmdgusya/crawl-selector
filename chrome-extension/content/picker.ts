@@ -3,12 +3,23 @@
  * Handles mousemove (hover highlight) and click (element selection).
  */
 
-import { generateSelectors, countMatches, getElementAttributes } from '../shared/selector-generator';
+import { generateSelectors, countMatches, getElementAttributes, extractDataFromElement, extractDataFromSelector } from '../shared/selector-generator';
+import type { ExtractConfig } from '../shared/types';
 import { highlightHover, highlightSelected, clearHover, clearAllHighlights, destroyHighlighter } from './highlighter';
 import { showTooltip, hideTooltip, destroyTooltip } from './tooltip';
 
 let active = false;
 let lastHovered: Element | null = null;
+
+function guessExtractConfig(element: Element): ExtractConfig {
+  // Check for common attributes first
+  if (element.getAttribute('href')) return { type: 'attribute', attribute: 'href' };
+  if (element.getAttribute('src')) return { type: 'attribute', attribute: 'src' };
+  if (element.getAttribute('data-testid')) return { type: 'attribute', attribute: 'data-testid' };
+
+  // Default to text extraction
+  return { type: 'text' };
+}
 
 function onMouseMove(e: MouseEvent): void {
   const target = e.target as Element;
@@ -20,16 +31,23 @@ function onMouseMove(e: MouseEvent): void {
   lastHovered = target;
   const { best } = generateSelectors(target);
   const matchCount = countMatches(best);
+  const extractConfig = guessExtractConfig(target);
+
+  // Compute preview data
+  const samples = extractDataFromSelector(best, extractConfig);
 
   highlightHover(target);
-  showTooltip(e.clientX, e.clientY, best, matchCount, target.tagName);
 
-  // Notify background of hover
+  const previewData = { samples, extractType: extractConfig.type as 'text' | 'html' | 'attribute' };
+  showTooltip(e.clientX, e.clientY, best, matchCount, target.tagName, previewData);
+
+  // Notify background of hover (include preview data)
   chrome.runtime.sendMessage({
     type: 'ELEMENT_HOVERED',
     selector: best,
     matchCount,
     tagName: target.tagName,
+    previewData,
   }).catch(() => {
     // Side panel might not be open
   });
@@ -48,15 +66,22 @@ function onClick(e: MouseEvent): void {
 
   const { best, alternatives } = generateSelectors(target);
   const attributes = getElementAttributes(target);
+  const extractConfig = guessExtractConfig(target);
+
+  // Compute preview data for the picked element
+  const samples = [extractDataFromElement(target, extractConfig)];
 
   highlightSelected(target);
 
-  // Send picked element to background
+  const previewData = { samples, extractType: extractConfig.type as 'text' | 'html' | 'attribute' };
+
+  // Send picked element to background (include preview data)
   chrome.runtime.sendMessage({
     type: 'ELEMENT_PICKED',
     selector: best,
     alternatives,
     attributes,
+    previewData,
   }).catch(() => {});
 }
 
