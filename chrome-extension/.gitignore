@@ -26,3 +26,6 @@ web-ext.config.ts
 *.njsproj
 *.sln
 *.sw?
+
+# Performance optimization documentation (do not commit)
+PERFORMANCE_OPTIMIZATION.md

@@ -9,6 +9,7 @@ interface PreviewData {
 }
 
 let tooltipEl: HTMLDivElement | null = null;
+let tooltipDimensions: { width: number; height: number } | null = null;
 
 function ensureTooltip(): HTMLDivElement {
   if (tooltipEl) return tooltipEl;
@@ -37,6 +38,17 @@ function ensureTooltip(): HTMLDivElement {
     letter-spacing: -0.01em;
   `;
   document.documentElement.appendChild(tooltipEl);
+
+  // Use ResizeObserver to cache dimensions instead of forcing layout on every move
+  if ('ResizeObserver' in window) {
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const rect = entry.contentRect;
+        tooltipDimensions = { width: rect.width, height: rect.height };
+      }
+    });
+    resizeObserver.observe(tooltipEl);
+  }
 
   return tooltipEl;
 }
@@ -98,8 +110,18 @@ export function showTooltip(
   // Position offset from cursor, clamped to viewport
   const offsetX = 12;
   const offsetY = 20;
-  const tipWidth = tip.offsetWidth;
-  const tipHeight = tip.offsetHeight;
+
+  // Use cached dimensions if available, otherwise read once
+  let tipWidth = tooltipDimensions?.width;
+  let tipHeight = tooltipDimensions?.height;
+
+  // If no cached dimensions (first render or no ResizeObserver), read once
+  if (tipWidth === undefined || tipHeight === undefined) {
+    const rect = tip.getBoundingClientRect();
+    tipWidth = rect.width;
+    tipHeight = rect.height;
+    tooltipDimensions = { width: tipWidth, height: tipHeight };
+  }
 
   let left = x + offsetX;
   let top = y + offsetY;

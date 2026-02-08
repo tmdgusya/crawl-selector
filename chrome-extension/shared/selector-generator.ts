@@ -1,4 +1,3 @@
-import { finder } from '@medv/finder';
 import type { ExtractConfig } from './types';
 
 // Patterns that indicate auto-generated IDs (unstable across deploys)
@@ -25,80 +24,98 @@ export function selectorRobustnessScore(selector: string): number {
 }
 
 /**
- * Generate the best CSS selector for an element, plus ranked alternatives.
+ * Generate simple selectors quickly.
+ * NO external libraries, NO DOM traversal, NO expensive operations.
+ * Optimized for Facebook/complex SPAs where finder takes 1000ms+.
  */
-export function generateSelectors(element: Element): { best: string; alternatives: string[] } {
+function generateFastSelectors(element: Element): string[] {
   const candidates: string[] = [];
+  const tagName = element.tagName.toLowerCase();
 
-  // 1. Try @medv/finder with different configs
-  try {
-    candidates.push(finder(element, { root: document.body }));
-  } catch {
-    // finder can throw on edge cases
+  // 1. ID selector (highest priority - fastest and most stable)
+  if (element.id && !AUTO_GENERATED_ID_PATTERN.test(element.id)) {
+    candidates.push(`#${CSS.escape(element.id)}`);
+    // If we have a good ID, return early - no need for more selectors
+    return candidates;
   }
 
-  try {
-    candidates.push(finder(element, { root: document.body, className: () => false }));
-  } catch {}
+  // 2. data-* attribute selectors (very stable)
+  // Check data-testid first as it's commonly used
+  const dataTestId = element.getAttribute('data-testid');
+  if (dataTestId) {
+    candidates.push(`[data-testid="${CSS.escape(dataTestId)}"]`);
+    return candidates; // data-testid is usually unique, return early
+  }
 
-  try {
-    candidates.push(finder(element, { root: document.body, tagName: () => true }));
-  } catch {}
-
-  // 2. Try data-* attribute selectors
+  // Other data attributes
   for (const attr of element.attributes) {
-    if (attr.name.startsWith('data-') && attr.name !== 'data-reactid') {
+    if (attr.name.startsWith('data-') && attr.name !== 'data-reactid' && attr.name !== 'data-testid') {
       candidates.push(`[${attr.name}="${CSS.escape(attr.value)}"]`);
     }
   }
 
-  // 3. Try ID (if not auto-generated)
-  if (element.id && !AUTO_GENERATED_ID_PATTERN.test(element.id)) {
-    candidates.push(`#${CSS.escape(element.id)}`);
-  }
-
-  // 4. Try ARIA / role selectors
+  // 3. ARIA selectors
   const role = element.getAttribute('role');
   if (role) {
     const label = element.getAttribute('aria-label');
-    candidates.push(label ? `[role="${role}"][aria-label="${CSS.escape(label)}"]` : `[role="${role}"]`);
+    if (label) {
+      candidates.push(`[role="${role}"][aria-label="${CSS.escape(label)}"]`);
+    } else {
+      candidates.push(`[role="${role}"]`);
+    }
   }
 
-  // 5. Try semantic class-based selectors
+  // 4. Class selectors (skip unstable hashed classes)
+  const stableClasses: string[] = [];
   for (const cls of element.classList) {
-    if (!UNSTABLE_CLASS_PATTERN.test(cls)) {
-      candidates.push(`${element.tagName.toLowerCase()}.${CSS.escape(cls)}`);
+    if (!UNSTABLE_CLASS_PATTERN.test(cls) && cls.length > 2 && !cls.includes(':')) {
+      stableClasses.push(cls);
     }
   }
 
-  // Deduplicate and validate (each must actually select the target element)
-  const seen = new Set<string>();
-  const valid: string[] = [];
-
-  for (const sel of candidates) {
-    if (seen.has(sel)) continue;
-    seen.add(sel);
-    try {
-      const matches = document.querySelectorAll(sel);
-      if (matches.length > 0 && Array.from(matches).includes(element)) {
-        valid.push(sel);
-      }
-    } catch {
-      // invalid selector
-    }
+  if (stableClasses.length > 0) {
+    // Use up to 2 stable classes
+    const classesToUse = stableClasses.slice(0, 2);
+    const classPart = classesToUse.map(c => CSS.escape(c)).join('.');
+    candidates.push(`${tagName}.${classPart}`);
   }
+
+  // 5. Simple tag selector as fallback
+  candidates.push(tagName);
+
+  return candidates;
+}
+
+/**
+ * Generate the best CSS selector for an element, plus ranked alternatives.
+ * ULTRA-FAST version: No finder library, no DOM queries, no matches() calls.
+ * Optimized for complex pages like Facebook where finder is too slow.
+ */
+export function generateSelectors(element: Element): { best: string; alternatives: string[] } {
+  const candidates = generateFastSelectors(element);
 
   // Sort by robustness (most stable first)
-  valid.sort((a, b) => selectorRobustnessScore(a) - selectorRobustnessScore(b));
+  candidates.sort((a, b) => selectorRobustnessScore(a) - selectorRobustnessScore(b));
 
-  const best = valid[0] ?? element.tagName.toLowerCase();
-  const alternatives = valid.slice(1, 5);
+  // Remove duplicates while preserving order
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const sel of candidates) {
+    if (!seen.has(sel)) {
+      seen.add(sel);
+      unique.push(sel);
+    }
+  }
+
+  const best = unique[0] ?? element.tagName.toLowerCase();
+  const alternatives = unique.slice(1, 5);
 
   return { best, alternatives };
 }
 
 /**
  * Count how many elements match a selector on the current page.
+ * Uses a try-catch to avoid errors on invalid selectors.
  */
 export function countMatches(selector: string): number {
   try {

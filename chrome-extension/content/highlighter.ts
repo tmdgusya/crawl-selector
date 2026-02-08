@@ -6,6 +6,7 @@
 let shadowHost: HTMLDivElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
 let overlayContainer: HTMLDivElement | null = null;
+let hoverOverlay: HTMLDivElement | null = null; // Reused hover overlay for performance
 
 function ensureShadowRoot(): ShadowRoot {
   if (shadowRoot) return shadowRoot;
@@ -60,17 +61,29 @@ function createOverlayDiv(rect: DOMRect, className: string): HTMLDivElement {
 }
 
 export function highlightHover(element: Element): void {
-  clearHover();
   ensureShadowRoot();
   const rect = element.getBoundingClientRect();
-  const div = createOverlayDiv(rect, 'cs-hover');
-  div.dataset.type = 'hover';
-  overlayContainer!.appendChild(div);
+
+  // Reuse existing hover overlay instead of creating/removing DOM elements
+  if (!hoverOverlay) {
+    hoverOverlay = createOverlayDiv(rect, 'cs-hover');
+    hoverOverlay.dataset.type = 'hover';
+    overlayContainer!.appendChild(hoverOverlay);
+  } else {
+    // Just update position and size - much faster than DOM manipulation
+    hoverOverlay.style.top = `${rect.top}px`;
+    hoverOverlay.style.left = `${rect.left}px`;
+    hoverOverlay.style.width = `${rect.width}px`;
+    hoverOverlay.style.height = `${rect.height}px`;
+    hoverOverlay.style.display = 'block';
+  }
 }
 
 export function clearHover(): void {
-  if (!overlayContainer) return;
-  overlayContainer.querySelectorAll('[data-type="hover"]').forEach((el) => el.remove());
+  // Hide instead of remove for reuse
+  if (hoverOverlay) {
+    hoverOverlay.style.display = 'none';
+  }
 }
 
 export function highlightSelected(element: Element): void {
@@ -116,5 +129,6 @@ export function destroyHighlighter(): void {
     shadowHost = null;
     shadowRoot = null;
     overlayContainer = null;
+    hoverOverlay = null;
   }
 }
