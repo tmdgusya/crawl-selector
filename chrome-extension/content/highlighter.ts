@@ -6,7 +6,7 @@
 let shadowHost: HTMLDivElement | null = null;
 let shadowRoot: ShadowRoot | null = null;
 let overlayContainer: HTMLDivElement | null = null;
-let hoverOverlay: HTMLDivElement | null = null; // Reused hover overlay for performance
+let hoverDiv: HTMLDivElement | null = null;
 
 function ensureShadowRoot(): ShadowRoot {
   if (shadowRoot) return shadowRoot;
@@ -64,25 +64,20 @@ export function highlightHover(element: Element): void {
   ensureShadowRoot();
   const rect = element.getBoundingClientRect();
 
-  // Reuse existing hover overlay instead of creating/removing DOM elements
-  if (!hoverOverlay) {
-    hoverOverlay = createOverlayDiv(rect, 'cs-hover');
-    hoverOverlay.dataset.type = 'hover';
-    overlayContainer!.appendChild(hoverOverlay);
+  if (hoverDiv) {
+    // Reuse existing div — just update position
+    hoverDiv.style.cssText = `top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;height:${rect.height}px;`;
   } else {
-    // Just update position and size - much faster than DOM manipulation
-    hoverOverlay.style.top = `${rect.top}px`;
-    hoverOverlay.style.left = `${rect.left}px`;
-    hoverOverlay.style.width = `${rect.width}px`;
-    hoverOverlay.style.height = `${rect.height}px`;
-    hoverOverlay.style.display = 'block';
+    hoverDiv = createOverlayDiv(rect, 'cs-hover');
+    hoverDiv.dataset.type = 'hover';
+    overlayContainer!.appendChild(hoverDiv);
   }
 }
 
 export function clearHover(): void {
-  // Hide instead of remove for reuse
-  if (hoverOverlay) {
-    hoverOverlay.style.display = 'none';
+  if (hoverDiv) {
+    hoverDiv.remove();
+    hoverDiv = null;
   }
 }
 
@@ -121,6 +116,7 @@ export function clearTestHighlights(): void {
 export function clearAllHighlights(): void {
   if (!overlayContainer) return;
   overlayContainer.innerHTML = '';
+  hoverDiv = null;
 }
 
 export function destroyHighlighter(): void {
@@ -129,6 +125,6 @@ export function destroyHighlighter(): void {
     shadowHost = null;
     shadowRoot = null;
     overlayContainer = null;
-    hoverOverlay = null;
+    hoverDiv = null;
   }
 }
