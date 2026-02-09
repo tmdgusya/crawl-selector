@@ -70,6 +70,10 @@ export function FieldEditor({ field }: Props) {
     updateField(field.id, { multiple: !field.multiple });
   }, [field.id, field.multiple, updateField]);
 
+  const toggleDeduplicate = useCallback(() => {
+    updateField(field.id, { deduplicate: !field.deduplicate });
+  }, [field.id, field.deduplicate, updateField]);
+
   const currentExtract =
     field.extract.type === 'attribute' ? `attribute:${field.extract.attribute}` : field.extract.type;
 
@@ -168,6 +172,34 @@ export function FieldEditor({ field }: Props) {
           />
         </button>
       </div>
+
+      {/* Deduplicate toggle (only visible when multiple is on) */}
+      {field.multiple && (
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor={`deduplicate-${field.id}`}
+            className="text-[11px] font-medium text-text-muted uppercase tracking-wider"
+          >
+            중복 제거
+          </label>
+          <button
+            id={`deduplicate-${field.id}`}
+            role="switch"
+            aria-checked={!!field.deduplicate}
+            aria-label={`중복 제거: ${field.deduplicate ? 'on' : 'off'}`}
+            onClick={toggleDeduplicate}
+            className={`focus-ring w-8 h-[18px] rounded-full transition-colors relative ${
+              field.deduplicate ? 'bg-brand-500' : 'bg-border-default'
+            }`}
+          >
+            <span
+              className={`absolute top-[3px] w-3 h-3 rounded-full bg-white transition-transform shadow-sm ${
+                field.deduplicate ? 'left-[14px]' : 'left-[3px]'
+              }`}
+            />
+          </button>
+        </div>
+      )}
 
       {/* Advanced section (collapsible) */}
       <div className="border-t border-border-subtle pt-2">

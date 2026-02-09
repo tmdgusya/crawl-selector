@@ -353,6 +353,63 @@ describe('extractFieldValue', () => {
       expect(result.matchCount).toBe(0);
     });
 
+    it('removes duplicate transformed values when deduplicate is true', () => {
+      document.body.innerHTML = `
+        <ul>
+          <li class="name">Alice</li>
+          <li class="name">Alice</li>
+          <li class="name">Bob</li>
+          <li class="name">Bob</li>
+          <li class="name">Charlie</li>
+        </ul>
+      `;
+      const field = makeField({
+        selector: '.name',
+        multiple: true,
+        deduplicate: true,
+      });
+      const result = extractFieldValue(field, document);
+
+      expect(result.success).toBe(true);
+      expect(result.transformed).toEqual(['Alice', 'Bob', 'Charlie']);
+      expect(result.raw).toEqual(['Alice', 'Bob', 'Charlie']);
+      expect(result.matchCount).toBe(3);
+    });
+
+    it('deduplicates after transforms are applied', () => {
+      document.body.innerHTML = `
+        <span class="v"> Alice </span>
+        <span class="v">Alice</span>
+        <span class="v"> Bob </span>
+      `;
+      const field = makeField({
+        selector: '.v',
+        multiple: true,
+        deduplicate: true,
+        transforms: [{ type: 'trim' }],
+      });
+      const result = extractFieldValue(field, document);
+
+      expect(result.transformed).toEqual(['Alice', 'Bob']);
+      expect(result.matchCount).toBe(2);
+    });
+
+    it('keeps all values when deduplicate is false or unset', () => {
+      document.body.innerHTML = `
+        <span class="v">A</span>
+        <span class="v">A</span>
+        <span class="v">B</span>
+      `;
+      const field = makeField({
+        selector: '.v',
+        multiple: true,
+      });
+      const result = extractFieldValue(field, document);
+
+      expect(result.transformed).toEqual(['A', 'A', 'B']);
+      expect(result.matchCount).toBe(3);
+    });
+
     it('scopes multiple mode within container', () => {
       document.body.innerHTML = `
         <div class="outside"><span class="tag">Outside</span></div>

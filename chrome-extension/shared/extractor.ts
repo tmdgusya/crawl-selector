@@ -122,16 +122,29 @@ export function extractFieldValue(field: SelectorField, doc: Document): FieldTes
         const elements = root.querySelectorAll(selector);
         if (elements.length === 0) continue;
 
-        const rawValues = Array.from(elements).map((el) => extractRawValue(el, field));
-        const transformedValues = rawValues.map((v) =>
+        let rawValues = Array.from(elements).map((el) => extractRawValue(el, field));
+        let transformedValues = rawValues.map((v) =>
           field.transforms.length > 0 ? applyTransforms(v, field.transforms) : v
         );
+
+        if (field.deduplicate) {
+          const seen = new Set<string>();
+          const uniqueIndices: number[] = [];
+          for (let i = 0; i < transformedValues.length; i++) {
+            if (!seen.has(transformedValues[i])) {
+              seen.add(transformedValues[i]);
+              uniqueIndices.push(i);
+            }
+          }
+          rawValues = uniqueIndices.map((i) => rawValues[i]);
+          transformedValues = uniqueIndices.map((i) => transformedValues[i]);
+        }
 
         return {
           success: true,
           raw: rawValues,
           transformed: transformedValues,
-          matchCount: elements.length,
+          matchCount: transformedValues.length,
           usedSelector: selector,
           timestamp,
         };

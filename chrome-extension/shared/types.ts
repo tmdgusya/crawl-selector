@@ -25,6 +25,7 @@ export interface SelectorField {
   extract: ExtractConfig;
   transforms: TransformStep[];
   multiple: boolean;
+  deduplicate?: boolean;
   list_container?: string;
 }
 
@@ -95,5 +96,6 @@ export interface ExportField {
   extract: ExtractConfig;
   transforms: TransformStep[];
   multiple: boolean;
+  deduplicate?: boolean;
   list_container?: string;
 }

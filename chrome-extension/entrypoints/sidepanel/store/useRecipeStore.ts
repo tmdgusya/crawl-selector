@@ -246,6 +246,7 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
         multiple: f.multiple,
       };
       if (f.fallback_selectors.length > 0) exported.fallback_selectors = f.fallback_selectors;
+      if (f.deduplicate) exported.deduplicate = f.deduplicate;
       if (f.list_container) exported.list_container = f.list_container;
       return exported;
     });
