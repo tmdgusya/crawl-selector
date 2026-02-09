@@ -1,9 +1,15 @@
 /**
  * Element picker — the core interaction loop.
  * Handles mousemove (hover highlight) and click (element selection).
+ *
+ * Performance optimizations for large-DOM pages (LinkedIn, etc.):
+ * - rAF throttle: process hover at most once per animation frame
+ * - WeakMap cache: skip selector generation on re-hover of same element
+ * - Message debounce: batch ELEMENT_HOVERED messages to background (100ms)
+ * - Attribute-based selectors only (no expensive DOM tree traversal)
  */
 
-import { generateSelectors, countMatches, getElementAttributes, extractDataFromElement, extractDataFromSelector } from '../shared/selector-generator';
+import { generateSelectors, generateQuickSelector, getElementAttributes, extractDataFromElement, extractDataFromSelector } from '../shared/selector-generator';
 import type { ExtractConfig } from '../shared/types';
 import { highlightHover, highlightSelected, clearHover, clearAllHighlights, destroyHighlighter } from './highlighter';
 import { showTooltip, hideTooltip, destroyTooltip } from './tooltip';
@@ -11,63 +17,19 @@ import { showTooltip, hideTooltip, destroyTooltip } from './tooltip';
 let active = false;
 let lastHovered: Element | null = null;
 
-// Performance optimization: RAF throttling
+// --- Performance state ---
 let rafId: number | null = null;
-let pendingMouseEvent: MouseEvent | null = null;
-
-// Performance optimization: Cache selector results per element
-const selectorCache = new WeakMap<Element, { best: string; alternatives: string[]; timestamp: number }>();
-const CACHE_TTL = 2000; // 2 seconds
-
-// Performance optimization: Debounced message sending
-let messageTimeout: ReturnType<typeof setTimeout> | null = null;
-const MESSAGE_DEBOUNCE_MS = 16; // ~1 frame at 60fps
+let selectorCache = new WeakMap<Element, { selector: string; matchCount: number }>();
+let hoverMsgTimer: ReturnType<typeof setTimeout> | null = null;
 
 function guessExtractConfig(element: Element): ExtractConfig {
-  // Check for common attributes first
   if (element.getAttribute('href')) return { type: 'attribute', attribute: 'href' };
   if (element.getAttribute('src')) return { type: 'attribute', attribute: 'src' };
   if (element.getAttribute('data-testid')) return { type: 'attribute', attribute: 'data-testid' };
-
-  // Default to text extraction
   return { type: 'text' };
 }
 
-// Get cached selectors or generate new ones
-function getCachedSelectors(target: Element): { best: string; alternatives: string[] } {
-  const now = Date.now();
-  const cached = selectorCache.get(target);
-
-  if (cached && now - cached.timestamp < CACHE_TTL) {
-    return { best: cached.best, alternatives: cached.alternatives };
-  }
-
-  const { best, alternatives } = generateSelectors(target);
-  selectorCache.set(target, { best, alternatives, timestamp: now });
-  return { best, alternatives };
-}
-
-// Debounced message send to reduce IPC overhead
-function debouncedSendMessage(message: unknown): void {
-  if (messageTimeout) {
-    clearTimeout(messageTimeout);
-  }
-  messageTimeout = setTimeout(() => {
-    chrome.runtime.sendMessage(message).catch(() => {
-      // Side panel might not be open
-    });
-  }, MESSAGE_DEBOUNCE_MS);
-}
-
-// Process mouse move with throttling via RAF
-function processMouseMove(): void {
-  rafId = null;
-
-  if (!pendingMouseEvent || !active) return;
-
-  const e = pendingMouseEvent;
-  pendingMouseEvent = null;
-
+function processHover(e: MouseEvent): void {
   const target = e.target as Element;
   if (!target || target === lastHovered) return;
 
@@ -76,61 +38,63 @@ function processMouseMove(): void {
 
   lastHovered = target;
 
-  // Performance profiling
-  const start = performance.now();
-  const timings: Record<string, number> = {};
+  const t0 = performance.now();
 
-  // Use cached selectors for better performance
-  const t1 = performance.now();
-  const { best } = getCachedSelectors(target);
-  timings.selectors = performance.now() - t1;
-
-  const t2 = performance.now();
-  const matchCount = countMatches(best);
-  timings.countMatches = performance.now() - t2;
-
-  const t3 = performance.now();
-  const extractConfig = guessExtractConfig(target);
-  timings.extractConfig = performance.now() - t3;
-
-  // Compute preview data - this might be expensive
-  const t4 = performance.now();
-  const samples = extractDataFromSelector(best, extractConfig);
-  timings.extractData = performance.now() - t4;
-
-  const t5 = performance.now();
-  highlightHover(target);
-  timings.highlight = performance.now() - t5;
-
-  const t6 = performance.now();
-  const previewData = { samples, extractType: extractConfig.type as 'text' | 'html' | 'attribute' };
-  showTooltip(e.clientX, e.clientY, best, matchCount, target.tagName, previewData);
-  timings.tooltip = performance.now() - t6;
-
-  const total = performance.now() - start;
-
-  // Log if slow (> 16ms = 1 frame)
-  if (total > 16) {
-    console.log('[CrawlSelector] Slow frame:', { total: total.toFixed(2), ...timings, target: target.tagName });
+  // Use cached result or generate a quick selector
+  let cached = selectorCache.get(target);
+  const wasCached = !!cached;
+  if (!cached) {
+    cached = generateQuickSelector(target);
+    selectorCache.set(target, cached);
   }
 
-  // Debounced message to reduce IPC overhead
-  debouncedSendMessage({
-    type: 'ELEMENT_HOVERED',
-    selector: best,
-    matchCount,
-    tagName: target.tagName,
-    previewData,
-  });
+  const t1 = performance.now();
+  const { selector, matchCount } = cached;
+
+  const extractConfig = guessExtractConfig(target);
+  const samples = extractDataFromSelector(selector, extractConfig);
+  const previewData = { samples, extractType: extractConfig.type as 'text' | 'html' | 'attribute' };
+
+  highlightHover(target);
+  const t2 = performance.now();
+
+  showTooltip(e.clientX, e.clientY, selector, matchCount, target.tagName, previewData);
+  const t3 = performance.now();
+
+  const total = t3 - t0;
+  if (total > 2) {
+    console.debug(
+      `[picker-perf] ${total.toFixed(1)}ms total | selector=${(t1 - t0).toFixed(1)}ms${wasCached ? '(cached)' : ''} highlight=${(t2 - t1).toFixed(1)}ms tooltip=${(t3 - t2).toFixed(1)}ms | "${selector}"`,
+    );
+  }
+
+  // Debounced notify to background (100ms)
+  if (hoverMsgTimer !== null) {
+    clearTimeout(hoverMsgTimer);
+  }
+  hoverMsgTimer = setTimeout(() => {
+    hoverMsgTimer = null;
+    chrome.runtime.sendMessage({
+      type: 'ELEMENT_HOVERED',
+      selector,
+      matchCount,
+      tagName: target.tagName,
+      previewData,
+    }).catch(() => {
+      // Side panel might not be open
+    });
+  }, 100);
 }
 
 function onMouseMove(e: MouseEvent): void {
-  // Store the latest event and schedule processing via RAF
-  pendingMouseEvent = e;
-
-  if (!rafId) {
-    rafId = requestAnimationFrame(processMouseMove);
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
   }
+  const mouseEvent = e;
+  rafId = requestAnimationFrame(() => {
+    rafId = null;
+    processHover(mouseEvent);
+  });
 }
 
 function onClick(e: MouseEvent): void {
@@ -144,25 +108,22 @@ function onClick(e: MouseEvent): void {
   // Skip our own elements
   if (target.id === 'crawl-selector-tooltip' || target.id === 'crawl-selector-highlighter') return;
 
-  // Use cached selectors if available, otherwise generate
-  const { best, alternatives } = getCachedSelectors(target);
+  // Click path uses full generateSelectors for alternative selectors
+  const { best, alternatives } = generateSelectors(target);
   const attributes = getElementAttributes(target);
   const extractConfig = guessExtractConfig(target);
-
-  // Compute preview data for the picked element
   const samples = [extractDataFromElement(target, extractConfig)];
+  const previewData = { samples, extractType: extractConfig.type as 'text' | 'html' | 'attribute' };
 
   highlightSelected(target);
 
-  const previewData = { samples, extractType: extractConfig.type as 'text' | 'html' | 'attribute' };
-
-  // Clear any pending hover message and send immediately
-  if (messageTimeout) {
-    clearTimeout(messageTimeout);
-    messageTimeout = null;
+  // Clear any pending hover message
+  if (hoverMsgTimer !== null) {
+    clearTimeout(hoverMsgTimer);
+    hoverMsgTimer = null;
   }
 
-  // Send picked element to background (include preview data)
+  // Send picked element to background
   chrome.runtime.sendMessage({
     type: 'ELEMENT_PICKED',
     selector: best,
@@ -197,24 +158,22 @@ export function deactivatePicker(): void {
   active = false;
   lastHovered = null;
 
-  // Cancel any pending RAF
-  if (rafId) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
-  }
-  pendingMouseEvent = null;
-
-  // Clear any pending message
-  if (messageTimeout) {
-    clearTimeout(messageTimeout);
-    messageTimeout = null;
-  }
-
   document.removeEventListener('mousemove', onMouseMove, true);
   document.removeEventListener('click', onClick, true);
   document.removeEventListener('keydown', onKeyDown, true);
 
   document.documentElement.style.cursor = '';
+
+  // Clean up performance state
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  if (hoverMsgTimer !== null) {
+    clearTimeout(hoverMsgTimer);
+    hoverMsgTimer = null;
+  }
+  selectorCache = new WeakMap();
 
   clearHover();
   hideTooltip();
