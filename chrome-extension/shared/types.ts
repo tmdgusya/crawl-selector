@@ -57,6 +57,25 @@ export interface SessionState {
   currentTabId: number | null;
 }
 
+// ── Extraction test results ──
+
+export interface FieldTestResult {
+  success: boolean;
+  raw: string | string[];
+  transformed: string | string[];
+  matchCount: number;
+  usedSelector: string;
+  error?: string;
+  timestamp: number;
+}
+
+export interface FullTestResult {
+  url: string;
+  extractedAt: string;
+  fields: Record<string, FieldTestResult>;
+  source: 'content-script' | 'fetch';
+}
+
 // ── Export format ──
 
 export interface CrawlRecipeExport {

@@ -85,6 +85,41 @@ export function ChevronDownIcon({ className, size: s = size }: IconProps) {
   );
 }
 
+export function PlayIcon({ className, size: s = size }: IconProps) {
+  return (
+    <svg width={s} height={s} viewBox="0 0 16 16" fill="none" className={className}>
+      <path d="M5 3l8 5-8 5V3z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function SpinnerIcon({ className, size: s = 14 }: IconProps) {
+  return (
+    <svg
+      className={`animate-spin ${className ?? ''}`}
+      width={s}
+      height={s}
+      viewBox="0 0 24 24"
+      fill="none"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="3"
+        className="opacity-25"
+      />
+      <path
+        d="M4 12a8 8 0 018-8"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function SparklesIcon({ className, size: s = size }: IconProps) {
   return (
     <svg width={s} height={s} viewBox="0 0 16 16" fill="none" className={className}>

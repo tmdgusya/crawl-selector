@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import type { CrawlRecipe, SelectorField, ExtractConfig, TransformStep, CrawlRecipeExport, ExportField } from '../../../shared/types';
+import type { CrawlRecipe, SelectorField, ExtractConfig, TransformStep, CrawlRecipeExport, ExportField, FieldTestResult, FullTestResult } from '../../../shared/types';
 import { getStorageData, saveRecipe, deleteRecipe as deleteRecipeFromStorage, setActiveRecipe } from '../../../shared/storage';
 import { guessFieldName, guessExtractConfig } from '../../../shared/helpers';
+import { createFieldErrorResult, buildFullTestError } from '../../../shared/extractor';
 
 export interface PendingDuplicate {
   selector: string;
@@ -43,6 +44,17 @@ interface RecipeState {
   // Export
   exportRecipe: (recipeId: string) => CrawlRecipeExport | null;
 
+  // Test state (ephemeral — not persisted to chrome.storage)
+  testResults: Record<string, FieldTestResult>;
+  testRunning: boolean;
+  fieldTesting: string | null;
+  fullTestResult: FullTestResult | null;
+
+  // Test actions
+  testField: (fieldId: string) => Promise<void>;
+  testAllFields: (source: 'content-script' | 'fetch', url?: string) => Promise<void>;
+  clearTestResults: () => void;
+
   // Helpers
   getActiveRecipe: () => CrawlRecipe | null;
 }
@@ -52,6 +64,10 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
   activeRecipeId: null,
   pickerActive: false,
   pendingDuplicate: null,
+  testResults: {},
+  testRunning: false,
+  fieldTesting: null,
+  fullTestResult: null,
 
   loadFromStorage: async () => {
     const data = await getStorageData();
@@ -245,6 +261,118 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
     if (recipe.pagination) result.pagination = recipe.pagination;
     return result;
   },
+
+  testField: async (fieldId) => {
+    const recipe = get().getActiveRecipe();
+    if (!recipe) return;
+    const field = recipe.fields.find((f) => f.id === fieldId);
+    if (!field) return;
+
+    set({ fieldTesting: fieldId });
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'EXTRACT_FIELD',
+        field,
+      });
+      const fieldResult = response?.result as FieldTestResult | undefined;
+      const result = fieldResult ?? createFieldErrorResult(field, '응답을 받지 못했습니다');
+      set((s) => ({
+        testResults: { ...s.testResults, [fieldId]: result },
+        fieldTesting: null,
+      }));
+    } catch {
+      set((s) => ({
+        testResults: { ...s.testResults, [fieldId]: createFieldErrorResult(field, '이 페이지에서는 테스트할 수 없습니다') },
+        fieldTesting: null,
+      }));
+    }
+  },
+
+  testAllFields: async (source, url?) => {
+    const recipe = get().getActiveRecipe();
+    if (!recipe || recipe.fields.length === 0) return;
+
+    const setError = (error: string, errorUrl: string) => {
+      set({
+        testRunning: false,
+        fullTestResult: buildFullTestError(recipe.fields, error, source, errorUrl),
+      });
+    };
+
+    set({ testRunning: true, fullTestResult: null });
+    try {
+      if (source === 'fetch') {
+        if (!url) {
+          set({ testRunning: false });
+          return;
+        }
+
+        // Client-side URL validation
+        try {
+          const parsed = new URL(url);
+          if (!parsed.protocol.startsWith('http')) {
+            setError('유효하지 않은 URL입니다 (http/https만 지원)', url);
+            return;
+          }
+        } catch {
+          setError('유효하지 않은 URL입니다', url);
+          return;
+        }
+
+        const response = await chrome.runtime.sendMessage({
+          type: 'FETCH_AND_EXTRACT',
+          url,
+          fields: recipe.fields,
+        });
+        if (response && 'error' in response) {
+          setError(response.error as string, url);
+        } else if (response?.results) {
+          set({
+            testRunning: false,
+            fullTestResult: {
+              url,
+              extractedAt: new Date().toISOString(),
+              fields: response.results as Record<string, FieldTestResult>,
+              source: 'fetch',
+            },
+          });
+        } else {
+          set({ testRunning: false });
+        }
+      } else {
+        // content-script mode
+        const response = await chrome.runtime.sendMessage({
+          type: 'EXTRACT_ALL_FIELDS',
+          fields: recipe.fields,
+        });
+
+        if (response && 'error' in response) {
+          setError(response.error as string, '');
+        } else if (response?.results) {
+          set({
+            testRunning: false,
+            fullTestResult: {
+              url: '',
+              extractedAt: new Date().toISOString(),
+              fields: response.results as Record<string, FieldTestResult>,
+              source: 'content-script',
+            },
+          });
+        } else {
+          setError('응답을 받지 못했습니다', '');
+        }
+      }
+    } catch {
+      setError('이 페이지에서는 테스트할 수 없습니다', url ?? '');
+    }
+  },
+
+  clearTestResults: () => set({
+    testResults: {},
+    testRunning: false,
+    fieldTesting: null,
+    fullTestResult: null,
+  }),
 
   getActiveRecipe: () => {
     const { activeRecipeId, recipes } = get();

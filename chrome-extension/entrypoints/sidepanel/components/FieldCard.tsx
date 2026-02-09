@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react';
 import type { SelectorField } from '../../../shared/types';
 import { useRecipeStore } from '../store/useRecipeStore';
 import { FieldEditor } from './FieldEditor';
-import { TrashIcon, ChevronDownIcon } from './Icons';
+import { FieldTestResultView } from './FieldTestResultView';
+import { TrashIcon, ChevronDownIcon, PlayIcon } from './Icons';
 
 interface Props {
   field: SelectorField;
@@ -10,9 +11,15 @@ interface Props {
 
 export function FieldCard({ field }: Props) {
   const { updateField, deleteField } = useRecipeStore();
+  const testField = useRecipeStore((s) => s.testField);
+  const fieldTesting = useRecipeStore((s) => s.fieldTesting);
+  const testResult = useRecipeStore((s) => s.testResults[field.id]);
   const [expanded, setExpanded] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(field.field_name);
+
+  const isTestingThisField = fieldTesting === field.id;
+  const isAnyFieldTesting = fieldTesting !== null;
 
   const handleTest = useCallback(() => {
     chrome.runtime.sendMessage({ type: 'TEST_SELECTOR', selector: field.selector });
@@ -21,6 +28,10 @@ export function FieldCard({ field }: Props) {
   const handleClearHighlights = useCallback(() => {
     chrome.runtime.sendMessage({ type: 'CLEAR_HIGHLIGHTS' });
   }, []);
+
+  const handleExtractTest = useCallback(() => {
+    testField(field.id);
+  }, [testField, field.id]);
 
   const handleNameSave = useCallback(() => {
     const cleaned = nameValue.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
@@ -120,6 +131,16 @@ export function FieldCard({ field }: Props) {
             Test
           </button>
           <button
+            onClick={handleExtractTest}
+            disabled={isAnyFieldTesting}
+            className="btn-press focus-ring inline-flex items-center gap-0.5 text-[11px] px-2 py-0.5 rounded-md bg-success-50 text-success-700 hover:bg-success-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label={`추출 테스트 "${field.field_name}"`}
+            title="추출 테스트"
+          >
+            <PlayIcon size={10} />
+            추출
+          </button>
+          <button
             onClick={handleDelete}
             className="btn-press focus-ring p-0.5 rounded-md text-danger-500 hover:bg-danger-50 transition-colors ml-auto"
             aria-label={`Delete field "${field.field_name}"`}
@@ -129,6 +150,16 @@ export function FieldCard({ field }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Extraction test result */}
+      {(isTestingThisField || testResult) && (
+        <div className="px-3 pb-3">
+          <FieldTestResultView
+            result={testResult}
+            loading={isTestingThisField}
+          />
+        </div>
+      )}
 
       {/* Expanded editor with animation */}
       {expanded && (

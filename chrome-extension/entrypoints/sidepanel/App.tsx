@@ -6,7 +6,10 @@ import { FieldList } from './components/FieldList';
 import { ExportPanel } from './components/ExportPanel';
 import { CrosshairIcon } from './components/Icons';
 import { DuplicateToast } from './components/DuplicateToast';
-import type { ContentMessage } from '../../shared/messages';
+import { FullTestPanel } from './components/FullTestPanel';
+import type { ContentMessage, BackgroundToSidePanelMessage } from '../../shared/messages';
+
+type IncomingMessage = BackgroundToSidePanelMessage | ContentMessage;
 
 export default function App() {
   const { loadFromStorage, addFieldFromPicker, setPickerActive, getActiveRecipe, activeRecipeId } =
@@ -16,12 +19,17 @@ export default function App() {
     loadFromStorage();
   }, [loadFromStorage]);
 
-  const handleMessage = useCallback((message: ContentMessage) => {
-    if (message.type === 'ELEMENT_PICKED') {
-      addFieldFromPicker(message.selector, message.alternatives, message.attributes);
-    }
-    if (message.type === 'PICKER_DEACTIVATED') {
-      setPickerActive(false);
+  const handleMessage = useCallback((message: IncomingMessage) => {
+    switch (message.type) {
+      case 'ELEMENT_PICKED':
+        addFieldFromPicker(message.selector, message.alternatives, message.attributes);
+        break;
+      case 'PICKER_DEACTIVATED':
+        setPickerActive(false);
+        break;
+      case 'PICKER_STATE_CHANGED':
+        setPickerActive(message.active);
+        break;
     }
   }, [addFieldFromPicker, setPickerActive]);
 
@@ -61,6 +69,9 @@ export default function App() {
             <p className="text-xs mt-1">Click "Start Picking" to select elements from the page.</p>
           </div>
         )}
+
+        {/* Full test panel */}
+        {recipe && recipe.fields.length > 0 && <FullTestPanel />}
 
         {/* Export */}
         {recipe && recipe.fields.length > 0 && <ExportPanel />}

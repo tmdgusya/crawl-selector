@@ -1,5 +1,7 @@
 // ── Message protocol between content script, background, and side panel ──
 
+import type { SelectorField } from './types';
+
 // Preview data extracted from elements
 export interface PreviewData {
   samples: string[];
@@ -17,14 +19,19 @@ export type BackgroundToContentMessage =
   | { type: 'ACTIVATE_PICKER' }
   | { type: 'DEACTIVATE_PICKER' }
   | { type: 'HIGHLIGHT_SELECTOR'; selector: string }
-  | { type: 'CLEAR_HIGHLIGHTS' };
+  | { type: 'CLEAR_HIGHLIGHTS' }
+  | { type: 'EXTRACT_FIELD'; field: SelectorField }
+  | { type: 'EXTRACT_ALL_FIELDS'; fields: SelectorField[] };
 
 // Side Panel → Background
 export type SidePanelMessage =
   | { type: 'TOGGLE_PICKER' }
   | { type: 'TEST_SELECTOR'; selector: string }
   | { type: 'CLEAR_HIGHLIGHTS' }
-  | { type: 'GET_STATE' };
+  | { type: 'GET_STATE' }
+  | { type: 'EXTRACT_FIELD'; field: SelectorField }
+  | { type: 'EXTRACT_ALL_FIELDS'; fields: SelectorField[] }
+  | { type: 'FETCH_AND_EXTRACT'; url: string; fields: SelectorField[] };
 
 // Background → Side Panel (via storage change events primarily, but also direct responses)
 export type BackgroundToSidePanelMessage =

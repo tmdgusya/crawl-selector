@@ -30,7 +30,7 @@ export function FieldEditor({ field }: Props) {
   const [selectorInput, setSelectorInput] = useState(field.selector);
   const [customAttr, setCustomAttr] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const handleSelectorChange = useCallback((value: string) => {
     setSelectorInput(value);
