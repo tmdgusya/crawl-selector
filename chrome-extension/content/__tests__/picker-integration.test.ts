@@ -3,7 +3,7 @@ import { activatePicker, deactivatePicker, isPickerActive } from '../picker';
 import { extractDataFromSelector } from '../../shared/selector-generator';
 
 // Mock chrome.runtime
-const mockSendMessage = vi.fn(() => Promise.resolve());
+const mockSendMessage = vi.fn((..._args: unknown[]) => Promise.resolve());
 global.chrome = {
   runtime: {
     sendMessage: mockSendMessage,
@@ -12,6 +12,7 @@ global.chrome = {
 
 describe('Picker with data preview', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     document.body.innerHTML = `
       <div id="test-container">
         <span class="title">Hello World</span>
@@ -24,9 +25,10 @@ describe('Picker with data preview', () => {
     deactivatePicker();
     document.body.innerHTML = '';
     mockSendMessage.mockClear();
+    vi.useRealTimers();
   });
 
-  it('should include preview data in hover message', () => {
+  it('should include preview data in hover message', async () => {
     activatePicker();
 
     const span = document.querySelector('.title');
@@ -35,11 +37,18 @@ describe('Picker with data preview', () => {
 
     document.dispatchEvent(moveEvent);
 
+    // processHover runs inside rAF — flush it
+    await vi.advanceTimersToNextTimerAsync();
+    // ELEMENT_HOVERED is debounced by 100ms
+    await vi.advanceTimersByTimeAsync(150);
+
     expect(mockSendMessage).toHaveBeenCalled();
-    const callArgs = mockSendMessage.mock.calls[0][0];
-    expect(callArgs.type).toBe('ELEMENT_HOVERED');
-    expect(callArgs.previewData).toBeDefined();
-    expect(callArgs.previewData.samples).toContain('Hello World');
+    const callArgs = mockSendMessage.mock.calls.find(
+      (call) => (call[0] as any)?.type === 'ELEMENT_HOVERED',
+    );
+    expect(callArgs).toBeDefined();
+    expect((callArgs![0] as any).previewData).toBeDefined();
+    expect((callArgs![0] as any).previewData.samples).toContain('Hello World');
   });
 
   it('should include preview data in click message', () => {
@@ -52,7 +61,10 @@ describe('Picker with data preview', () => {
     document.dispatchEvent(clickEvent);
 
     expect(mockSendMessage).toHaveBeenCalled();
-    const callArgs = mockSendMessage.mock.calls.find((call: any) => call[0]?.type === 'ELEMENT_PICKED');
-    expect(callArgs[0].previewData).toBeDefined();
+    const callArgs = mockSendMessage.mock.calls.find(
+      (call) => (call[0] as any)?.type === 'ELEMENT_PICKED',
+    );
+    expect(callArgs).toBeDefined();
+    expect((callArgs![0] as any).previewData).toBeDefined();
   });
 });
